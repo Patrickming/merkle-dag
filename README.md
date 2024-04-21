@@ -15,8 +15,10 @@
 ## 实验一  File to DAG
 
 - 根据上面的两个接口，实现 `dag.go` 中的 `Add` 函数，将 `Node` 中的数据保存在 `KVStore` 中，然后计算出Merkle Root
+- `dag.go`
 
 ## 实验二  DAG to File
 
 - 根据上面的接口，实现 `dag2file.go` 中的 `Hash2File` 函数，将 `hash` 对应的数据从 `KVStore` 中读出来，然后根据`path`返回对应的文件内容。
+- `dag2file.go`
 
