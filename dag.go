@@ -5,30 +5,35 @@ import (
 	"hash"
 )
 
-type Link struct {
-	Name string
-	Hash []byte
-	Size int
-}
-
-type Object struct {
-	Links []Link
-	Data  []byte
-}
-
+// 定义一些常量用于限制列表和块的大小。
 const (
 	LIST_LIMIT  = 2048
-	BLOCK_LIMIT = 256 * 1024
+	BLOCK_LIMIT = 256 * 1024 // 每个块256KB
 )
 
+// 定义Merkle DAG中的节点类型。
 const (
 	BLOB = "blob"
 	LIST = "list"
 	TREE = "tree"
 )
 
+// Link 结构体定义了Merkle DAG中的链接节点。
+type Link struct {
+	Name string // 链接的名称
+	Hash []byte // 链接指向的数据的哈希值
+	Size int    // 数据的大小
+}
+
+// Object 结构体代表Merkle DAG中的一个节点，可以是文件或目录。
+type Object struct {
+	Links []Link // 存储指向其他Object的链接
+	Data  []byte // 节点包含的数据
+}
+
+// Add 函数将节点添加到存储中，并返回Merkle根的哈希值。
 func Add(store KVStore, node Node, h hash.Hash) []byte {
-	// TODO 将分片写入到KVStore中，并返回Merkle Root
+	// 判断节点类型并处理
 	if node.Type() == FILE {
 		file := node.(File)
 		fileSlice := storeFile(file, store, h)
@@ -44,9 +49,11 @@ func Add(store KVStore, node Node, h hash.Hash) []byte {
 	}
 }
 
+// compute 函数根据节点高度和分片的位置递归计算和存储节点。
 func compute(height int, node File, store KVStore, seedId int, h hash.Hash) (*Object, int) {
+	// 如果是叶子节点
 	if height == 1 {
-		if (len(node.Bytes()) - seedId) <= 256*1024 {
+		if (len(node.Bytes()) - seedId) <= BLOCK_LIMIT {
 			data := node.Bytes()[seedId:]
 			blob := Object{
 				Links: nil,
@@ -61,10 +68,11 @@ func compute(height int, node File, store KVStore, seedId int, h hash.Hash) (*Ob
 			}
 			return &blob, len(data)
 		}
+		// 构造分支节点
 		links := &Object{}
 		totalLen := 0
 		for i := 1; i <= 4096; i++ {
-			end := seedId + 256*1024
+			end := seedId + BLOCK_LIMIT
 			if len(node.Bytes()) < end {
 				end = len(node.Bytes())
 			}
@@ -86,7 +94,7 @@ func compute(height int, node File, store KVStore, seedId int, h hash.Hash) (*Ob
 				Size: len(data),
 			})
 			links.Data = append(links.Data, []byte("data")...)
-			seedId += 256 * 1024
+			seedId += BLOCK_LIMIT
 			if seedId >= len(node.Bytes()) {
 				break
 			}
@@ -100,6 +108,7 @@ func compute(height int, node File, store KVStore, seedId int, h hash.Hash) (*Ob
 		}
 		return links, totalLen
 	} else {
+		// 递归处理高层节点
 		links := &Object{}
 		totalLen := 0
 		for i := 1; i <= 4096; i++ {
@@ -132,8 +141,9 @@ func compute(height int, node File, store KVStore, seedId int, h hash.Hash) (*Ob
 	}
 }
 
+// storeFile 函数用于存储文件类型的节点。
 func storeFile(node File, store KVStore, h hash.Hash) *Object {
-	if len(node.Bytes()) <= 256*1024 {
+	if len(node.Bytes()) <= BLOCK_LIMIT {
 		data := node.Bytes()
 		blob := Object{
 			Links: nil,
@@ -148,7 +158,8 @@ func storeFile(node File, store KVStore, h hash.Hash) *Object {
 		}
 		return &blob
 	}
-	linkLen := (len(node.Bytes()) + (256*1024 - 1)) / (256 * 1024)
+	// 计算需要的层级数
+	linkLen := (len(node.Bytes()) + (BLOCK_LIMIT - 1)) / BLOCK_LIMIT
 	height := 0
 	tmp := linkLen
 	for {
@@ -162,6 +173,7 @@ func storeFile(node File, store KVStore, h hash.Hash) *Object {
 	return res
 }
 
+// storeDirectory 函数用于存储目录类型的节点。
 func storeDirectory(node Dir, store KVStore, h hash.Hash) *Object {
 	iter := node.It()
 	tree := &Object{}
