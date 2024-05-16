@@ -5,6 +5,18 @@ import (
 	"strings"
 )
 
+// 定义一些常量用于限制列表和块的大小。
+const (
+	LIST_LIMIT  = 2048
+	BLOCK_LIMIT = 256 * 1024 // 每个块256KB
+)
+
+// 定义Merkle DAG中的节点类型。
+const (
+	BLOB = "blob"
+	LIST = "list"
+	TREE = "tree"
+)
 const STEP = 4 // 定义步进值，用于从Object的Data字段中提取信息
 
 // Hash2File 根据给定的哈希和路径从KV存储中检索文件。
