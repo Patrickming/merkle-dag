@@ -34,7 +34,7 @@ type Object struct {
 // Add 函数是主函数，它接受一个存储器 KVStore，一个节点 Node 和一个哈希算法 hash.Hash 作为参数，并返回 Merkle 根哈希值。
 // 根据节点的类型（文件或文件夹），调用相应的处理函数。
 func Add(store KVStore, node Node, h hash.Hash) []byte {
-	//将分片写入到KVStore中，并返回Merkle Root
+	// TODO 将分片写入到KVStore中，并返回Merkle Root
 	var rootHash []byte
 	if node.Type() == FILE {
 		rootHash, _ = StoreFile(store, node, h)
@@ -53,13 +53,17 @@ func StoreFile(store KVStore, node Node, h hash.Hash) ([]byte, []byte) {
 	if node.Size() > 256*1024 {
 		fileType = []byte("list")
 		obj := Object{}
-		n := node.Size() % 256 * 1024
-		m := node.Size() / 256 * 1024
+		// 计算分块个数
+		n := node.Size() / (256 * 1024)
+		// 计算剩余未分块的大小
+		m := node.Size() % (256 * 1024)
 		if m > 0 {
-			n++
+			n++ // 如果有剩余，则需要再增加一个分块
 		}
 		// 对文件内容进行分块处理
 		for i := 0; i < int(n); i++ {
+			// 假设文件大小为 512KB，那么就需要将文件分成两个块。
+			// 第一个块的 start 为 0，end 为 256KB；第二个块的 start 为 256KB，end 为 512KB。
 			start := i * 256 * 1024
 			end := (i + 1) * 256 * 1024
 			if end > len(content) {
@@ -76,30 +80,40 @@ func StoreFile(store KVStore, node Node, h hash.Hash) ([]byte, []byte) {
 		}
 		// 将该文件存入 KVStore 中
 		jsonData := Object{Data: obj.Data, Links: obj.Links}
+		/*
+			在这段代码中，json.Marshal(jsonData) 是将一个结构体 jsonData 序列化为 JSON 格式的字节流 value。这样做的目的是为了将结构化的数据转换为一种通用的格式，以便于存储、传输和解析。
+			在这个实验中，jsonData 是一个结构体对象，其中包含了文件的相关信息，如链接列表和数据。将其序列化为 JSON 格式的字节流可以使得这些数据以一种通用的格式存储在 KVStore 中，也方便了后续的读取和解析。
+			另外，json.Marshal() 方法返回两个值，第一个值是序列化后的 JSON 字节流，第二个值是一个可能的错误。在这里，使用下划线 _ 忽略了错误，因为当前的代码中没有处理错误的逻辑，或者说在这个情景下，不需要特别处理该错误。
+		*/
 		value, _ := json.Marshal(jsonData)
 		key := CalHash(h, value)
 		store.Put(key, value)
-		return key, fileType
+		return key, fileType //这里是list
 	} else {
 		// 如果文件大小不超过 256KB，直接存储文件内容
 		jsonData := Object{Data: content}
 		value, _ := json.Marshal(jsonData)
 		key := CalHash(h, value)
 		store.Put(key, value)
-		return key, fileType
+		return key, fileType //这里是blob
 	}
 }
 
 // StoreDir 函数用于处理文件夹节点，递归处理文件夹下的所有文件和子文件夹，并构建出对应的 DAG 结构。
 func StoreDir(store KVStore, node Node, h hash.Hash) []byte {
+	// 初始化一个空的 DAG 结构
 	tree := Object{
 		Links: make([]Link, 0),
 		Data:  make([]byte, 0),
 	}
+	// 将节点断言为文件夹类型
 	dirNode := node.(Dir)
-	it := dirNode.It() // 获取迭代器
+	// 获取文件夹迭代器，用于遍历文件夹下的文件和子文件夹
+	it := dirNode.It()
 	for it.Next() {
+		// 获取当前迭代器指向的节点
 		childNode := it.Node()
+		// 如果是文件节点
 		if childNode.Type() == FILE {
 			// 处理文件节点
 			key, fileType := StoreFile(store, childNode, h)
@@ -111,28 +125,31 @@ func StoreDir(store KVStore, node Node, h hash.Hash) []byte {
 			key = CalHash(h, value)
 			store.Put(key, value)
 		} else if childNode.Type() == DIR {
-			// 处理文件夹节点
+			// 如果是文件夹节点，递归处理子文件夹
 			key := StoreDir(store, childNode, h)
 			// 更新 DAG 结构中的链接列表和数据
 			tree.Links = append(tree.Links, Link{Name: childNode.Name(), Hash: key})
-			tree.Data = append(tree.Data, []byte("tree")...)
+			tree.Data = append(tree.Data, []byte("tree")...) // 添加文件夹标识符
 		}
 		// 将更新后的 DAG 结构存入 KVStore 中
 		value, _ := json.Marshal(tree)
 		key := CalHash(h, value)
 		store.Put(key, value)
-		return key
+		return key // 返回当前文件夹的哈希值
 	}
-	// 将 DAG 结构存入 KVStore 中
+	// 如果文件夹为空，直接将 DAG 结构存入 KVStore 中
 	value, _ := json.Marshal(tree)
 	key := CalHash(h, value)
 	store.Put(key, value)
-	return key
+	return key // 返回当前文件夹的哈希值
 }
 
 // CalHash 函数用于计算数据的哈希值。
+// 它接受一个哈希算法实例 h 和待计算哈希的数据 value 作为参数，并返回计算得到的哈希值。
 func CalHash(h hash.Hash, value []byte) []byte {
+	// 重置哈希算法实例的状态，以确保从零开始计算哈希值
 	h.Reset()
+	// 计算数据的哈希值并返回
 	key := h.Sum(value)
 	return key
 }
